@@ -1,6 +1,4 @@
 import time
-from google import genai
-from google.genai import types
 from typing import List, Optional
 from app.config import settings
 from app.search.retriever import semantic_search
@@ -12,28 +10,38 @@ from app.rag.prompts import (
     format_conversation_history,
 )
 
-# Configure Gemini client (new SDK)
-_client = None
+# ─── Singleton clients ────────────────────────────────────────────────────────
+_gemini_client = None
+_groq_client = None
 
 
 def get_gemini_client():
-    """Returns the singleton Gemini client."""
-    global _client
-    if _client is None:
-        _client = genai.Client(api_key=settings.gemini_api_key)
-        print(f"[RAG] Gemini client initialized with model '{settings.gemini_model}' [OK]")
-    return _client
+    """Returns the singleton Google Gemini client."""
+    global _gemini_client
+    if _gemini_client is None:
+        from google import genai
+        _gemini_client = genai.Client(api_key=settings.gemini_api_key)
+        print(f"[RAG] Gemini client ready — model: {settings.gemini_model}")
+    return _gemini_client
 
 
-def _call_gemini_with_retry(prompt: str, max_retries: int = 3) -> str:
-    """
-    Call Gemini with exponential backoff on 429 rate-limit errors.
+def get_groq_client():
+    """Returns the singleton Groq client."""
+    global _groq_client
+    if _groq_client is None:
+        from groq import Groq
+        _groq_client = Groq(api_key=settings.groq_api_key)
+        print(f"[RAG] Groq client ready — model: {settings.groq_model}")
+    return _groq_client
 
-    Retry schedule: 5s -> 10s -> 20s
-    Returns the answer string, or a user-friendly error message.
-    """
+
+# ─── Provider call helpers ────────────────────────────────────────────────────
+
+def _call_gemini(prompt: str, max_retries: int = 3) -> str:
+    """Call Gemini with exponential backoff on 429 errors (5s → 10s → 20s)."""
+    from google.genai import types
     client = get_gemini_client()
-    wait_seconds = 5
+    wait = 5
 
     for attempt in range(1, max_retries + 1):
         try:
@@ -49,33 +57,77 @@ def _call_gemini_with_retry(prompt: str, max_retries: int = 3) -> str:
             return response.text.strip() if response.text else "No response generated."
 
         except Exception as e:
-            error_str = str(e)
-
-            # 429 rate-limit: wait and retry with exponential backoff
-            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+            err = str(e)
+            if "429" in err or "RESOURCE_EXHAUSTED" in err:
                 if attempt < max_retries:
-                    print(
-                        f"[RAG] Rate limit hit (attempt {attempt}/{max_retries}). "
-                        f"Retrying in {wait_seconds}s..."
-                    )
-                    time.sleep(wait_seconds)
-                    wait_seconds *= 2  # exponential backoff: 5s -> 10s -> 20s
+                    print(f"[RAG][Gemini] Rate limit hit (attempt {attempt}/{max_retries}). Retrying in {wait}s...")
+                    time.sleep(wait)
+                    wait *= 2
                     continue
-                else:
-                    # All retries exhausted — return a friendly message
-                    return (
-                        "The AI service is temporarily rate-limited due to free tier usage limits. "
-                        "Please wait 1-2 minutes and try again. "
-                        "If this persists, consider upgrading your Gemini API plan at "
-                        "https://ai.google.dev/gemini-api/docs/rate-limits"
-                    )
-
-            # Any other error — log and surface clearly (not raw stack trace)
-            print(f"[RAG] Gemini error on attempt {attempt}: {error_str}")
-            return f"An error occurred while generating a response. Please try again. (Detail: {error_str[:200]})"
+                return (
+                    "The Gemini AI service is rate-limited (free tier quota exhausted). "
+                    "Please wait 1-2 minutes or switch to Groq by setting LLM_PROVIDER=groq in your .env file."
+                )
+            print(f"[RAG][Gemini] Error: {err}")
+            return f"Error generating response: {err[:300]}"
 
     return "No response generated."
 
+
+def _call_groq(prompt: str, max_retries: int = 3) -> str:
+    """Call Groq with retry on transient errors. Groq free tier: 6000 RPM."""
+    client = get_groq_client()
+    wait = 2
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            completion = client.chat.completions.create(
+                model=settings.groq_model,
+                messages=[
+                    {"role": "system", "content": RAG_SYSTEM_PROMPT},
+                    {"role": "user",   "content": prompt},
+                ],
+                temperature=0.2,
+                max_tokens=1024,
+            )
+            return completion.choices[0].message.content.strip()
+
+        except Exception as e:
+            err = str(e)
+            # 429 on Groq is extremely rare but handle it anyway
+            if "429" in err or "rate" in err.lower():
+                if attempt < max_retries:
+                    print(f"[RAG][Groq] Rate limit hit (attempt {attempt}/{max_retries}). Retrying in {wait}s...")
+                    time.sleep(wait)
+                    wait *= 2
+                    continue
+                return (
+                    "The Groq AI service is temporarily rate-limited. "
+                    "Please wait a moment and try again."
+                )
+            print(f"[RAG][Groq] Error: {err}")
+            return f"Error generating response: {err[:300]}"
+
+    return "No response generated."
+
+
+def _call_llm(prompt: str) -> str:
+    """
+    Route the LLM call to the configured provider.
+    Set LLM_PROVIDER in .env to 'gemini' or 'groq'.
+    """
+    provider = settings.llm_provider.lower()
+    print(f"[RAG] Using LLM provider: {provider}")
+
+    if provider == "groq":
+        return _call_groq(prompt)
+    elif provider == "gemini":
+        return _call_gemini(prompt)
+    else:
+        return f"Unknown LLM provider '{provider}'. Set LLM_PROVIDER to 'gemini' or 'groq' in .env"
+
+
+# ─── Main RAG pipeline ────────────────────────────────────────────────────────
 
 def run_rag_pipeline(
     question: str,
@@ -86,9 +138,9 @@ def run_rag_pipeline(
     Full RAG pipeline:
     1. Retrieve relevant chunks from ChromaDB
     2. Check similarity threshold (avoid hallucination on irrelevant queries)
-    3. Format context into a prompt
-    4. Send to Gemini (with retry) and get grounded answer
-    5. Return answer + sources
+    3. Format context + conversation history into a prompt
+    4. Send to configured LLM (Groq or Gemini) with automatic retry
+    5. Return answer + source citations
     """
     start_time = time.time()
 
@@ -100,13 +152,13 @@ def run_rag_pipeline(
     )
     chunks = search_result["results"]
 
-    # Step 2: Threshold check — avoid sending empty context to the LLM
+    # Step 2: No results → bail early
     if not chunks:
         elapsed = round((time.time() - start_time) * 1000, 2)
         return {
             "answer": (
                 "I couldn't find relevant information in the uploaded documents to answer this question. "
-                "Please try rephrasing or upload documents related to your topic."
+                "Please try rephrasing your question or upload documents related to your topic."
             ),
             "sources": [],
             "has_answer": False,
@@ -116,7 +168,7 @@ def run_rag_pipeline(
     # Step 3: Format context block
     context_text = format_context_block(chunks)
 
-    # Step 4: Build the prompt
+    # Step 4: Build prompt (with or without conversation history)
     if conversation_history:
         history_text = format_conversation_history(conversation_history)
         prompt = CHAT_HISTORY_TEMPLATE.format(
@@ -130,10 +182,10 @@ def run_rag_pipeline(
             question=question,
         )
 
-    # Step 5: Call Gemini with automatic retry on rate-limit errors
-    answer = _call_gemini_with_retry(prompt)
+    # Step 5: Call the configured LLM
+    answer = _call_llm(prompt)
 
-    # Step 6: Build sources list (top 3 chunks)
+    # Step 6: Build source citations (top 3 chunks)
     sources = [
         {
             "document_name": chunk["document_name"],

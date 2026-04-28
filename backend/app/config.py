@@ -4,9 +4,13 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     # LLM
-    gemini_api_key: str
-    llm_provider: str = "gemini"
+    gemini_api_key: str = ""
+    llm_provider: str = "groq"          # "gemini" or "groq"
     gemini_model: str = "gemini-2.0-flash-lite"
+
+    # Groq (free tier: 6000 RPM, 14400 RPD)
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.1-8b-instant"
 
     # Embedding
     embedding_model: str = "all-MiniLM-L6-v2"
