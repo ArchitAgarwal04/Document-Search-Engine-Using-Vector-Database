@@ -184,55 +184,6 @@ Document Search Engine using vector DB/
 
 ---
 
-## 🎨 Design System
-
-The UI uses a **custom dark glassmorphism design system** defined entirely in `frontend/src/index.css` using CSS custom properties.
-
-### Color Palette
-| Variable | Value | Usage |
-|---|---|---|
-| `--bg-primary` | `#0a0a0f` | Main page background |
-| `--bg-secondary` | `#111118` | Sidebar background |
-| `--bg-card` | `rgba(255,255,255,0.04)` | Card backgrounds |
-| `--accent` | `#6c63ff` | Primary brand color (purple) |
-| `--accent-light` | `#8b85ff` | Hover states, active links |
-| `--glass` | `rgba(255,255,255,0.05)` | Glassmorphism base |
-| `--glass-border` | `rgba(255,255,255,0.1)` | Card and input borders |
-| `--text-primary` | `#f0f0ff` | Main body text |
-| `--text-secondary` | `#9898b3` | Subtitles, labels |
-
-### Typography
-- **Font**: Inter (Google Fonts) — weights 300, 400, 500, 600, 700, 800
-- `-webkit-font-smoothing: antialiased` for crisp rendering
-
-### Animated Background
-```css
-body::before {
-  background:
-    radial-gradient(ellipse 80% 50% at 20% 0%,  rgba(108,99,255,0.12) ...),
-    radial-gradient(ellipse 60% 40% at 80% 100%, rgba(99,179,255,0.08) ...);
-}
-```
-Two soft radial gradients create a subtle living atmosphere behind all content.
-
-### Reusable CSS Classes
-| Class | Description |
-|---|---|
-| `.card` | Glassmorphism card with blur, border, hover lift |
-| `.btn-primary` | Gradient purple button with glow shadow |
-| `.btn-ghost` | Subtle transparent button |
-| `.btn-danger` | Red-tinted destructive action button |
-| `.input` | Glass-style text input with focus ring |
-| `.badge-*` | Colored pill badges (success/warning/danger/info/accent) |
-| `.chat-bubble.user` | Purple gradient message bubble (right-aligned) |
-| `.chat-bubble.assistant` | Glass-style AI response bubble (left-aligned) |
-| `.dropzone` | Dashed-border drag-and-drop upload zone |
-| `.spinner` | Animated CSS loading spinner |
-| `.fade-in` | Fade + slide-up entrance animation (0.4s) |
-| `.score-bar` | Animated similarity score progress bar |
-
----
-
 ## 📱 Pages & Components
 
 ### LoginPage
@@ -529,5 +480,3 @@ User asks question
 MIT License — free to use, modify, and distribute.
 
 ---
-
-<p align="center">Built with ❤️ using FastAPI, React, ChromaDB, and open-source LLMs</p>
