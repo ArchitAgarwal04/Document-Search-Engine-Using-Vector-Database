@@ -1,0 +1,25 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Local environment — secrets must NOT go into the image
+.env
+*.env
+
+# Local data directories — these are mounted as volumes in docker-compose
+data/
+
+# Version control
+.git
+.gitignore
+
+# Docs & misc
+*.md
+README*
+
+# IDE
+.vscode/
+.idea/

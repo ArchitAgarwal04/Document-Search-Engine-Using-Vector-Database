@@ -1,0 +1,21 @@
+# Dependencies — installed fresh inside the container via npm ci
+node_modules/
+
+# Previous build output
+dist/
+
+# Version control
+.git
+.gitignore
+
+# Env files
+.env
+*.env
+
+# Docs & misc
+*.md
+README*
+
+# IDE
+.vscode/
+.idea/
